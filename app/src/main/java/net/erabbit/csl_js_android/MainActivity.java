@@ -6,6 +6,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.liquidplayer.webkit.javascriptcore.JSBaseArray;
 import org.liquidplayer.webkit.javascriptcore.JSContext;
@@ -14,6 +15,7 @@ import org.liquidplayer.webkit.javascriptcore.JSValue;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -33,12 +35,67 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onClick(View v) {
-        jsContext.evaluateScript("var a = csl.encode(null, 'battery-get');");
-        JSValue jsValue = jsContext.property("a");
+        //battery-get
+        encode(null, "battery-get");
+        //battery-data
+        JSONObject data = new JSONObject();
+        try {
+            data.put("battery-level", 0);
+        }
+        catch(JSONException e) {
+            e.printStackTrace();
+            return;
+        }
+        Byte[] array = encode(data.toString(), "battery-data");
+        JSONObject object = decode(array, "battery-data");
+        int batteryLevel = -1;
+        try {
+            batteryLevel = object.getInt("battery-level");
+        }
+        catch(JSONException e) {
+            e.printStackTrace();
+        }
+        if(batteryLevel >= 0)
+            ((TextView)v).setText(String.format(Locale.getDefault(), "batteryLevel: %d", batteryLevel));
+    }
+
+    private Byte[] encode(String object, String fieldId) {
+        jsContext.evaluateScript("var array = csl.encode(" + object + ", '" + fieldId + "');");
+        JSValue jsValue = jsContext.property("array");
         JSBaseArray jsArray = jsValue.toJSArray();
-        Object[] array = jsArray.toArray();
-        Log.d("csl", jsValue.toJSON());
-        ((TextView)v).setText(jsValue.toJSON());
+        Byte[] array = (Byte[])jsArray.toArray();
+        Log.d("csl", "object = " + object + "; fieldId = " + fieldId + "; array = " + hexString(array));
+        return array;
+    }
+
+    private JSONObject decode(Byte[] array, String fieldId) {
+        StringBuilder builder = new StringBuilder();
+        for(Byte b : array) {
+            builder.append(b & 0xff);
+            builder.append(",");
+        }
+        builder.insert(0, "[");
+        builder.replace(builder.length()-1, builder.length(), "]");
+        String arrayString = builder.toString();
+        jsContext.evaluateScript("var a = csl.decode(" + arrayString + ", undefined, undefined, '" + fieldId + "');");
+        JSValue jsValue = jsContext.property("a");
+        String json = jsValue.toJSON();
+        Log.d("csl", "array = " + hexString(array) + "; fieldId = " + fieldId + "; object = " + json);
+        JSONObject object = null;
+        try {
+            object = new JSONObject(json);
+        }
+        catch(JSONException e) {
+            e.printStackTrace();
+        }
+        return object;
+    }
+
+    private String hexString(Byte[] array) {
+        StringBuilder hex = new StringBuilder();
+        for(Byte b : array)
+            hex.append(String.format("%02X ", b & 0xff));
+        return hex.toString();
     }
 
     public String getStrFromAssets(String fileName) {
